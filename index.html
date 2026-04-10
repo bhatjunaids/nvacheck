@@ -114,7 +114,6 @@ tbody tr.dpmu:hover td:first-child{background:#fff5d4}
 <div class="tabs">
   <div class="tab on" data-t="table">Aggregate Summary</div>
   <div class="tab" data-t="agg">Day-wise Table</div>
-  <div class="tab" data-t="insights">Key Insights</div>
 </div>
 
 <div class="wrap">
@@ -358,106 +357,6 @@ function renderAgg(){
   });
   html+=`</tbody></table></div>`;
   document.getElementById('p-agg').innerHTML=html;
-}
-
-// ═══════════════════════════════════════
-//  KEY INSIGHTS
-// ═══════════════════════════════════════
-function renderInsights(){
-  const dists=getFilteredDists();
-  const dates=getDateRange();
-  if(dates.length<2){document.getElementById('p-insights').innerHTML='<p style="color:#888;padding:20px">Select at least 2 dates to see insights.</p>';return}
-
-  const first=dates[0],last=dates[dates.length-1];
-
-  // per-district: first day vs last day
-  const moves=dists.map(dist=>{
-    const af=iA[dist+'|'+first],al=iA[dist+'|'+last];
-    const wf=iW[dist+'|'+first],wl=iW[dist+'|'+last];
-    const aPctF=af?.pct||0, aPctL=al?.pct||0;
-    const wPctF=wf?.pct||0, wPctL=wl?.pct||0;
-    // avg delta across range
-    let sumD=0,nD=0;
-    dates.forEach(d=>{
-      const a=iA[dist+'|'+d],w=iW[dist+'|'+d];
-      if(a&&w&&a.ts>0){sumD+=(w.pct-a.pct);nD++}
-    });
-    return{
-      dist,
-      aChange:+(( aPctL-aPctF)*100).toFixed(1),
-      wChange:+(( wPctL-wPctF)*100).toFixed(1),
-      aPctL, wPctL,
-      avgDelta:nD?+((sumD/nD)*100).toFixed(1):0,
-      isDpmu:dpmuSet.has(dist),
-      hasFirst:!!(af?.ts),hasLast:!!(al?.ts)
-    };
-  }).filter(r=>r.hasFirst&&r.hasLast);
-
-  // sort for various insights
-  const byAJump=[...moves].sort((a,b)=>b.aChange-a.aChange);
-  const byASlide=[...moves].sort((a,b)=>a.aChange-b.aChange);
-  const byWJump=[...moves].sort((a,b)=>b.wChange-a.wChange);
-  const byDelta=[...moves].sort((a,b)=>b.avgDelta-a.avgDelta);
-  const byDeltaLow=[...moves].sort((a,b)=>a.avgDelta-b.avgDelta);
-  const topAll=[...moves].sort((a,b)=>b.aPctL-a.aPctL);
-  const botAll=[...moves].sort((a,b)=>a.aPctL-b.aPctL);
-
-  // volatile: biggest absolute swing day-to-day
-  const volatile=dists.map(dist=>{
-    let maxSwing=0;
-    for(let i=1;i<dates.length;i++){
-      const prev=iA[dist+'|'+dates[i-1]],cur=iA[dist+'|'+dates[i]];
-      if(prev&&cur&&prev.ts>0&&cur.ts>0){
-        const sw=Math.abs(cur.pct-prev.pct)*100;
-        if(sw>maxSwing)maxSwing=sw;
-      }
-    }
-    return{dist,maxSwing:+maxSwing.toFixed(1),isDpmu:dpmuSet.has(dist)};
-  }).filter(r=>r.maxSwing>0).sort((a,b)=>b.maxSwing-a.maxSwing);
-
-  function tag(r){return r.isDpmu?'<span class="tag-dpmu">DPMU</span>':''}
-  function insightList(arr,valFn,n=5){
-    return arr.slice(0,n).map(r=>`<div class="row"><span class="nm">${r.dist}${tag(r)}</span><span>${valFn(r)}</span></div>`).join('');
-  }
-
-  const html=`
-  <div style="font-size:11px;color:#666;margin-bottom:12px">Comparing <b>${fd(first)}</b> → <b>${fd(last)}</b> · ${moves.length} districts with data on both dates</div>
-  <div class="insights">
-    <div class="insight-card">
-      <h4><span class="icon">🚀</span> Biggest Jumps — All Competencies</h4>
-      <div class="insight-list">${insightList(byAJump,r=>`<span class="pos">+${r.aChange.toFixed(1)}pp</span>`)}</div>
-    </div>
-    <div class="insight-card">
-      <h4><span class="icon">📉</span> Biggest Slides — All Competencies</h4>
-      <div class="insight-list">${insightList(byASlide,r=>`<span class="${r.aChange<0?'neg':'zero'}">${r.aChange>0?'+':''}${r.aChange.toFixed(1)}pp</span>`)}</div>
-    </div>
-    <div class="insight-card">
-      <h4><span class="icon">🚀</span> Biggest Jumps — W/o Writing</h4>
-      <div class="insight-list">${insightList(byWJump,r=>`<span class="pos">+${r.wChange.toFixed(1)}pp</span>`)}</div>
-    </div>
-    <div class="insight-card">
-      <h4><span class="icon">✏️</span> Highest Writing Impact (Avg Delta)</h4>
-      <div class="insight-list">${insightList(byDelta,r=>`<span class="pos">+${r.avgDelta.toFixed(1)}pp</span>`)}</div>
-    </div>
-    <div class="insight-card">
-      <h4><span class="icon">🏆</span> Top Performers — All (Latest Day)</h4>
-      <div class="insight-list">${insightList(topAll,r=>`<span class="pct">${(r.aPctL*100).toFixed(1)}%</span>`)}</div>
-    </div>
-    <div class="insight-card">
-      <h4><span class="icon">⚠️</span> Bottom Performers — All (Latest Day)</h4>
-      <div class="insight-list">${insightList(botAll,r=>`<span class="pct" style="color:#dc2626">${(r.aPctL*100).toFixed(1)}%</span>`)}</div>
-    </div>
-    <div class="insight-card">
-      <h4><span class="icon">🎢</span> Most Volatile (Biggest Day-to-Day Swing)</h4>
-      <div class="insight-list">${insightList(volatile,r=>`<span style="font-weight:700">${r.maxSwing.toFixed(1)}pp</span>`)}</div>
-    </div>
-    <div class="insight-card">
-      <h4><span class="icon">📌</span> Lowest Writing Impact</h4>
-      <div class="insight-list">${insightList(byDeltaLow,r=>`<span class="${r.avgDelta<1?'neg':'zero'}">+${r.avgDelta.toFixed(1)}pp</span>`)}</div>
-    </div>
-  </div>`;
-
-  document.getElementById('p-insights').innerHTML=html;
 }
 
 // wire up controls
